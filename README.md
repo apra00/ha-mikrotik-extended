@@ -14,6 +14,22 @@
 
 Full-featured Home Assistant integration for MikroTik routers running **RouterOS 7+**. Monitor system resources, control firewall rules, track network devices, manage WireGuard peers, containers, and more — all from your HA dashboard. Supports multiple routers simultaneously.
 
+## Comparison with the core integration
+
+Home Assistant ships a core `mikrotik` integration, but it is limited to **device tracking / presence detection**. MikroTik Extended is a full RouterOS management integration:
+
+- **System** — CPU, memory, temperatures, voltage/power, PSU and fan metrics, UPS, GPS, uptime, reboot button
+- **Interfaces** — link status, enable/disable, TX/RX traffic, per-interface IP, SFP and PoE status/control
+- **Firewall & routing** — NAT, mangle, filter and routing rules as individual switches
+- **Network** — WireGuard peers, wireless clients (CAPsMAN/WiFi, auto-detected), DHCP leases, NetWatch, PPP users, simple queues, captive portal, IP Cloud
+- **Containers** — start/stop and status for RouterOS containers
+- **Firmware** — RouterOS and RouterBoard updates from within Home Assistant
+- **Actions** — Wake-on-LAN, data refresh, RouterOS environment variables, raw API test
+- **Discovery** — automatic device discovery via MNDP
+- **Config flow** with selectable sensor presets and fine-grained options
+
+Built for **RouterOS 7+**, **Silver** quality scale, with a full test suite. It is a standalone, from-scratch integration (domain `mikrotik_extended`) — not a fork — so it installs alongside the core integration without conflicts.
+
 ## Features
 
 ### System Monitoring
