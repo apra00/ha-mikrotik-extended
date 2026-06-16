@@ -2626,6 +2626,10 @@ class MikrotikCoordinator(DataUpdateCoordinator[None]):
         for uid, vals in self.ds["host"].items():
             if vals.get("source") in ["capsman", "wireless", "restored"]:
                 continue
+            # Container veth interfaces are not real clients — never count them.
+            if self.ds["interface"].get(self.ds["host"][uid].get("interface"), {}).get("type") == "veth":
+                self.ds["host"][uid]["available"] = False
+                continue
             if uid in self.ds["arp"] and self.ds["arp"][uid].get("address", "unknown") not in ["unknown", ""]:
                 self.ds["host"][uid]["available"] = True
                 self.ds["host"][uid]["last-seen"] = utcnow()

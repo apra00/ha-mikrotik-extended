@@ -3142,6 +3142,24 @@ class TestWiredHostExpiry:
         assert coord.ds["resource"]["clients_wired"] == 0
         assert coord.ds["host"]["AA:BB"]["available"] is False
 
+    async def test_container_veth_hosts_not_counted(self, hass):
+        coord = _make_coordinator(hass)
+        coord.ds["interface"] = {
+            "ether1": {"name": "ether1", "type": "ether"},
+            "veth1": {"name": "veth1", "type": "veth"},
+        }
+        coord.ds["arp"] = {
+            "AA:BB": {"mac-address": "AA:BB", "address": "10.0.0.5", "interface": "ether1", "bridge": ""},
+            "CC:DD": {"mac-address": "CC:DD", "address": "172.17.0.2", "interface": "veth1", "bridge": ""},
+        }
+
+        await self._process(coord)
+
+        # Real client on ether1 counts; container veth endpoint does not.
+        assert coord.ds["resource"]["clients_wired"] == 1
+        assert coord.ds["host"]["AA:BB"]["available"] is True
+        assert coord.ds["host"]["CC:DD"]["available"] is False
+
     def test_get_arp_prunes_departed_entries(self, hass):
         coord = _make_coordinator(hass)
         coord.api.query = MagicMock(return_value=[
