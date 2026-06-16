@@ -66,6 +66,7 @@ from .const import (
     CONF_SENSOR_SIMPLE_QUEUES,
     CONF_SENSOR_WIREGUARD,
     CONF_TRACK_HOSTS,
+    CONF_TRACK_HOSTS_TIMEOUT,
     DEFAULT_SCAN_INTERVAL,
     DEFAULT_SENSOR_CLIENT_CAPTIVE,
     DEFAULT_SENSOR_CLIENT_TRAFFIC,
@@ -82,6 +83,7 @@ from .const import (
     DEFAULT_SENSOR_SCRIPTS,
     DEFAULT_SENSOR_SIMPLE_QUEUES,
     DEFAULT_SENSOR_WIREGUARD,
+    DEFAULT_TRACK_HOST_TIMEOUT,
     DEFAULT_TRACK_HOSTS,
     DOMAIN,
 )
@@ -440,6 +442,14 @@ class MikrotikCoordinator(DataUpdateCoordinator[None]):
     def option_track_network_hosts(self):
         """Config entry option to not track ARP."""
         return self.config_entry.options.get(CONF_TRACK_HOSTS, DEFAULT_TRACK_HOSTS)
+
+    # ---------------------------
+    #   option_track_network_hosts_timeout
+    # ---------------------------
+    @property
+    def option_track_network_hosts_timeout(self):
+        """Seconds before an unseen wired host is considered offline."""
+        return timedelta(seconds=self.config_entry.options.get(CONF_TRACK_HOSTS_TIMEOUT, DEFAULT_TRACK_HOST_TIMEOUT))
 
     # ---------------------------
     #   option_sensor_port_traffic
@@ -2178,6 +2188,8 @@ class MikrotikCoordinator(DataUpdateCoordinator[None]):
             key="mac-address",
             vals=[{"name": "mac-address"}, {"name": "address"}, {"name": "interface"}],
             ensure_vals=[{"name": "bridge", "default": ""}],
+            prune_stale=True,
+            stale_counters=self._get_stale_counters("arp"),
         )
 
         for uid, vals in self.ds["arp"].items():
@@ -2607,11 +2619,19 @@ class MikrotikCoordinator(DataUpdateCoordinator[None]):
                 if key not in self.ds["host"][uid]:
                     self.ds["host"][uid][key] = default
 
-        # Mark wired hosts available if present in ARP table
+        # Mark wired hosts available from the current ARP table, and expire
+        # those no longer present once they fall outside the tracking timeout.
+        # Without this the count only ever grows (departed devices linger).
+        timeout = self.option_track_network_hosts_timeout
         for uid, vals in self.ds["host"].items():
-            if vals.get("source") not in ["capsman", "wireless", "restored"] and (uid in self.ds["arp"] and self.ds["arp"][uid].get("address", "unknown") not in ["unknown", ""]):
+            if vals.get("source") in ["capsman", "wireless", "restored"]:
+                continue
+            if uid in self.ds["arp"] and self.ds["arp"][uid].get("address", "unknown") not in ["unknown", ""]:
                 self.ds["host"][uid]["available"] = True
                 self.ds["host"][uid]["last-seen"] = utcnow()
+            else:
+                last_seen = self.ds["host"][uid].get("last-seen")
+                self.ds["host"][uid]["available"] = bool(last_seen and utcnow() - last_seen < timeout)
 
         # Process hosts
         self.ds["resource"]["clients_wired"] = 0

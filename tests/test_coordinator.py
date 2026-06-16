@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from unittest.mock import AsyncMock, MagicMock, patch
+
+from homeassistant.util.dt import utcnow
 
 import pytest
 from homeassistant.const import (
@@ -3108,3 +3110,51 @@ class TestAsyncProcessHostRemainingBranches:
 
         # Line 2631 branch sets manufacturer to "" (mac-address unknown skips try)
         assert coord.ds["host"]["AA:BB"]["manufacturer"] == ""
+
+
+class TestWiredHostExpiry:
+    """Regression: wired count must drop when a device leaves (no reload)."""
+
+    async def _process(self, coord):
+        coord.async_mac_lookup = MagicMock()
+        coord.async_mac_lookup.lookup = AsyncMock(return_value="")
+        await coord.async_process_host()
+
+    async def test_wired_host_expires_when_absent_from_arp(self, hass):
+        coord = _make_coordinator(hass, options={"track_network_hosts_timeout": 180})
+        coord.ds["arp"] = {
+            "AA:BB": {"mac-address": "AA:BB", "address": "10.0.0.5", "interface": "ether1", "bridge": ""},
+        }
+
+        # Present in ARP → counted.
+        await self._process(coord)
+        assert coord.ds["resource"]["clients_wired"] == 1
+        assert coord.ds["host"]["AA:BB"]["available"] is True
+
+        # Left ARP but seen recently → still counted (within timeout).
+        coord.ds["arp"] = {}
+        await self._process(coord)
+        assert coord.ds["resource"]["clients_wired"] == 1
+
+        # Last seen beyond timeout → expired, count drops without a reload.
+        coord.ds["host"]["AA:BB"]["last-seen"] = utcnow() - timedelta(seconds=10_000)
+        await self._process(coord)
+        assert coord.ds["resource"]["clients_wired"] == 0
+        assert coord.ds["host"]["AA:BB"]["available"] is False
+
+    def test_get_arp_prunes_departed_entries(self, hass):
+        coord = _make_coordinator(hass)
+        coord.api.query = MagicMock(return_value=[
+            {"mac-address": "AA:BB", "address": "10.0.0.5", "interface": "ether1"},
+        ])
+        coord.get_arp()
+        assert "AA:BB" in coord.ds["arp"]
+
+        # Device gone; a non-empty ARP without it prunes after 3 strikes.
+        coord.api.query = MagicMock(return_value=[
+            {"mac-address": "CC:DD", "address": "10.0.0.9", "interface": "ether1"},
+        ])
+        for _ in range(3):
+            coord.get_arp()
+        assert "AA:BB" not in coord.ds["arp"]
+        assert "CC:DD" in coord.ds["arp"]
