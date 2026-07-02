@@ -58,9 +58,7 @@ _IFACE_TYPE_CATEGORY = {
 def _skip_interface_traffic_sensor(config_entry, entity_description, item) -> bool:
     if entity_description.func != "MikrotikInterfaceTrafficSensor":
         return False
-    if not config_entry.options.get(CONF_SENSOR_PORT_TRAFFIC, DEFAULT_SENSOR_PORT_TRAFFIC):
-        return True
-    return item["type"] == "bridge"
+    return not config_entry.options.get(CONF_SENSOR_PORT_TRAFFIC, DEFAULT_SENSOR_PORT_TRAFFIC)
 
 
 def _skip_client_traffic(entity_description, item) -> bool:

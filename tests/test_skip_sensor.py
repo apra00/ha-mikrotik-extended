@@ -45,11 +45,12 @@ class TestSkipTrafficSensor:
         data = {"eth0": {"type": "ether"}}
         assert _skip_sensor(entry, desc, data, "eth0") is False
 
-    def test_skip_bridge_type(self):
+    def test_no_skip_bridge_type(self):
+        """Bridge interfaces get traffic sensors too (#9): aggregated LAN/DMZ rates."""
         entry = _make_config_entry(**{CONF_SENSOR_PORT_TRAFFIC: True})
         desc = _make_desc(func="MikrotikInterfaceTrafficSensor")
         data = {"br0": {"type": "bridge"}}
-        assert _skip_sensor(entry, desc, data, "br0") is True
+        assert _skip_sensor(entry, desc, data, "br0") is False
 
     def test_no_skip_ether_type(self):
         entry = _make_config_entry(**{CONF_SENSOR_PORT_TRAFFIC: True})

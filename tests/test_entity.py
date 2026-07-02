@@ -139,7 +139,8 @@ class TestSkipSensor:
             is True
         )
 
-    def test_traffic_sensor_skipped_for_bridge(self):
+    def test_traffic_sensor_not_skipped_for_bridge(self):
+        """Bridges get traffic sensors too (#9)."""
         from custom_components.mikrotik_extended.const import CONF_SENSOR_PORT_TRAFFIC
         from custom_components.mikrotik_extended.entity import _skip_sensor
 
@@ -150,7 +151,7 @@ class TestSkipSensor:
                 {"b0": {"type": "bridge"}},
                 "b0",
             )
-            is True
+            is False
         )
 
     def test_client_traffic_skipped_when_unavailable(self):
