@@ -4,17 +4,50 @@ on:
     - cron: '30 1 * * *'
   workflow_dispatch:
 
+permissions:
+  issues: write
+
 jobs:
   stale:
     name: Stale
     runs-on: ubuntu-latest
     steps:
-      - uses: "actions/stale@v9"
+      # Lane 1: fix already released (completed + awaiting-feedback).
+      # Warn after 14 days of silence, close 7 days later. Reopenable any time.
+      - name: Close fixed issues without feedback
+        uses: "actions/stale@v9"
         with:
-          stale-issue-message: 'This issue has been automatically marked as stale because it has not had recent activity. It will be closed if no further activity occurs.'
-          stale-pr-message: 'This PR has been automatically marked as stale because it has not had recent activity. It will be closed if no further activity occurs.'
-          close-issue-message: 'This issue was closed because it has been stalled for 5 days with no activity.'
-          days-before-stale: 14
-          days-before-close: 7
-          exempt-issue-labels: 'pinned,security,planned,help wanted'
-          exempt-pr-labels: 'pinned,security,planned,help wanted'
+          only-issue-labels: 'completed,awaiting-feedback'
+          days-before-issue-stale: 14
+          days-before-issue-close: 7
+          stale-issue-label: 'pending-close'
+          remove-issue-stale-when-updated: true
+          stale-issue-message: >-
+            The fix for this issue is included in a published release and we
+            are waiting for confirmation. If you can, please update and let us
+            know whether it works for you. Without a reply this issue will be
+            closed in 7 days. It can be reopened at any time.
+          close-issue-message: >-
+            Closing this issue: the fix has been released and there was no
+            further feedback. If the problem still occurs for you, feel free
+            to reopen or leave a comment. Thank you for the report!
+          days-before-pr-stale: -1
+          days-before-pr-close: -1
+
+      # Lane 2: still waiting for information, no fix released yet
+      # (awaiting-feedback without completed). Remind only, never close.
+      - name: Remind reporters on issues waiting for info
+        uses: "actions/stale@v9"
+        with:
+          only-issue-labels: 'awaiting-feedback'
+          exempt-issue-labels: 'completed'
+          days-before-issue-stale: 14
+          days-before-issue-close: -1
+          stale-issue-label: 'needs-reply'
+          remove-issue-stale-when-updated: true
+          stale-issue-message: >-
+            Friendly reminder: this issue is waiting for feedback from the
+            reporter. Please share the requested details when you have a
+            moment so we can move forward. The issue stays open.
+          days-before-pr-stale: -1
+          days-before-pr-close: -1
