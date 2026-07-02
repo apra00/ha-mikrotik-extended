@@ -2186,7 +2186,12 @@ class MikrotikCoordinator(DataUpdateCoordinator[None]):
             data=self.ds["arp"],
             source=self.api.query("/ip/arp"),
             key="mac-address",
-            vals=[{"name": "mac-address"}, {"name": "address"}, {"name": "interface"}],
+            vals=[
+                {"name": "mac-address"},
+                {"name": "address"},
+                {"name": "interface"},
+                {"name": "status", "default": "unknown"},
+            ],
             ensure_vals=[{"name": "bridge", "default": ""}],
             prune_stale=True,
             stale_counters=self._get_stale_counters("arp"),
@@ -2630,7 +2635,23 @@ class MikrotikCoordinator(DataUpdateCoordinator[None]):
             if self.ds["interface"].get(self.ds["host"][uid].get("interface"), {}).get("type") == "veth":
                 self.ds["host"][uid]["available"] = False
                 continue
-            if uid in self.ds["arp"] and self.ds["arp"][uid].get("address", "unknown") not in ["unknown", ""]:
+            arp_entry = self.ds["arp"].get(uid, {})
+            arp_present = arp_entry.get("address", "unknown") not in ["unknown", ""]
+            # ARP presence alone is not proof of life: on RouterOS 7 entries
+            # linger in the table as "stale"/"failed" long after the device
+            # left. Only confirmed states refresh last-seen; unconfirmed
+            # entries decay through the tracking timeout below. A missing
+            # status (RouterOS 6 has no such field) keeps the old behavior.
+            unconfirmed_statuses = ["failed", "incomplete"]
+            if self.option_track_network_hosts:
+                # A stale entry can be a departed device or a live one whose
+                # traffic never crosses the router — only an active arp-ping
+                # can tell them apart. With tracking on, the ping refreshes
+                # last-seen for live hosts, so stale entries may safely decay;
+                # without it, dropping them would undercount quiet-but-present
+                # devices, so ARP presence keeps counting.
+                unconfirmed_statuses.append("stale")
+            if arp_present and arp_entry.get("status", "unknown") not in unconfirmed_statuses:
                 self.ds["host"][uid]["available"] = True
                 self.ds["host"][uid]["last-seen"] = utcnow()
             else:

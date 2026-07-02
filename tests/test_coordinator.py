@@ -6,8 +6,6 @@ from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from homeassistant.util.dt import utcnow
-
 import pytest
 from homeassistant.const import (
     CONF_HOST,
@@ -20,9 +18,10 @@ from homeassistant.const import (
 )
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import UpdateFailed
+from homeassistant.util.dt import utcnow
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.mikrotik_extended.const import DOMAIN
+from custom_components.mikrotik_extended.const import CONF_TRACK_HOSTS, DOMAIN
 
 
 # Provide IssueSeverity fallback for test environment
@@ -2004,6 +2003,101 @@ class TestAsyncProcessHost:
 
         assert "authorized" not in coord.ds["host"]["AA:BB"]
 
+    @staticmethod
+    def _minimal_host_ds(coord):
+        """Empty out the host-related stores used by async_process_host."""
+        coord.ds["capsman_hosts"] = {}
+        coord.ds["wireless_hosts"] = {}
+        coord.ds["dhcp"] = {}
+        coord.ds["dns"] = {}
+        coord.ds["host_hass"] = {}
+        coord.ds["hostspot_host"] = {}
+        coord.ds["resource"] = {}
+        coord.async_mac_lookup.lookup = AsyncMock(return_value="")
+
+    async def test_reachable_arp_host_available(self, hass):
+        """ARP status reachable → available, last-seen refreshed, counted wired."""
+        coord = _make_coordinator(hass)
+        self._minimal_host_ds(coord)
+        coord.ds["arp"] = {
+            "AA:BB": {"mac-address": "AA:BB", "address": "10.0.0.1", "interface": "ether1", "status": "reachable"},
+        }
+
+        await coord.async_process_host()
+
+        assert coord.ds["host"]["AA:BB"]["available"] is True
+        assert coord.ds["host"]["AA:BB"]["last-seen"]
+        assert coord.ds["resource"]["clients_wired"] == 1
+
+    async def test_stale_arp_host_decays_with_tracking_on(self, hass):
+        """Tracking on: stale entry with no recent last-seen → not counted (arp-ping is the authority)."""
+        coord = _make_coordinator(hass, options={CONF_TRACK_HOSTS: True})
+        self._minimal_host_ds(coord)
+        coord.ds["arp"] = {
+            "AA:BB": {"mac-address": "AA:BB", "address": "10.0.0.1", "interface": "ether1", "status": "stale"},
+        }
+
+        await coord.async_process_host()
+
+        assert coord.ds["host"]["AA:BB"]["available"] is False
+        assert coord.ds["resource"]["clients_wired"] == 0
+
+    async def test_stale_arp_host_within_timeout_stays_available(self, hass):
+        """Tracking on: stale entry seen recently (e.g. by arp-ping) → still available."""
+        coord = _make_coordinator(hass, options={CONF_TRACK_HOSTS: True})
+        self._minimal_host_ds(coord)
+        coord.ds["arp"] = {
+            "AA:BB": {"mac-address": "AA:BB", "address": "10.0.0.1", "interface": "ether1", "status": "stale"},
+        }
+        coord.ds["host"] = {
+            "AA:BB": {"source": "arp", "last-seen": utcnow()},
+        }
+
+        await coord.async_process_host()
+
+        assert coord.ds["host"]["AA:BB"]["available"] is True
+        assert coord.ds["resource"]["clients_wired"] == 1
+
+    async def test_stale_arp_host_counted_without_tracking(self, hass):
+        """Tracking off (default): stale entry stays counted — without an active
+        arp-ping a quiet-but-present device is indistinguishable from a departed
+        one, and dropping it would undercount."""
+        coord = _make_coordinator(hass)
+        self._minimal_host_ds(coord)
+        coord.ds["arp"] = {
+            "AA:BB": {"mac-address": "AA:BB", "address": "10.0.0.1", "interface": "ether1", "status": "stale"},
+        }
+
+        await coord.async_process_host()
+
+        assert coord.ds["host"]["AA:BB"]["available"] is True
+        assert coord.ds["resource"]["clients_wired"] == 1
+
+    async def test_failed_arp_host_not_available(self, hass):
+        """ARP status failed → not counted."""
+        coord = _make_coordinator(hass)
+        self._minimal_host_ds(coord)
+        coord.ds["arp"] = {
+            "AA:BB": {"mac-address": "AA:BB", "address": "10.0.0.1", "interface": "ether1", "status": "failed"},
+        }
+
+        await coord.async_process_host()
+
+        assert coord.ds["host"]["AA:BB"]["available"] is False
+        assert coord.ds["resource"]["clients_wired"] == 0
+
+    async def test_missing_arp_status_keeps_old_behavior(self, hass):
+        """No status field (RouterOS 6) → ARP presence alone marks available."""
+        coord = _make_coordinator(hass)
+        self._minimal_host_ds(coord)
+        coord.ds["arp"] = {
+            "AA:BB": {"mac-address": "AA:BB", "address": "10.0.0.1", "interface": "ether1"},
+        }
+
+        await coord.async_process_host()
+
+        assert coord.ds["host"]["AA:BB"]["available"] is True
+        assert coord.ds["resource"]["clients_wired"] == 1
 
 # ---------------------------------------------------------------------------
 # _get_iface_from_entry
