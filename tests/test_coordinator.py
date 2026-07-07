@@ -1525,6 +1525,39 @@ class TestMiscSensorGetters:
             coord.get_gps()
         assert coord.ds["gps"]["valid"] is True
 
+    def test_get_lte_disabled_skips_monitor(self, hass):
+        coord = _make_coordinator(hass)
+        lte_list = {"lte1": {"comment": "", "enabled": False, "running": False, ".id": "*1"}}
+        with patch(
+            "custom_components.mikrotik_extended.coordinator.parse_api",
+            return_value=lte_list,
+        ) as mock_parse:
+            coord.get_lte()
+        assert coord.ds["lte"]["lte1"]["enabled"] is False
+        mock_parse.assert_called_once()
+
+    def test_get_lte_not_running_skips_monitor(self, hass):
+        coord = _make_coordinator(hass)
+        lte_list = {"lte1": {"comment": "", "enabled": True, "running": False, ".id": "*1"}}
+        with patch(
+            "custom_components.mikrotik_extended.coordinator.parse_api",
+            return_value=lte_list,
+        ) as mock_parse:
+            coord.get_lte()
+        mock_parse.assert_called_once()
+
+    def test_get_lte_enabled_triggers_monitor(self, hass):
+        coord = _make_coordinator(hass)
+        lte_list = {"lte1": {"comment": "", "enabled": True, "running": True, ".id": "*1"}}
+        monitor = {"lte1": {"current-cellid": "12345", "rssi": -75}}
+        with patch(
+            "custom_components.mikrotik_extended.coordinator.parse_api",
+            side_effect=[lte_list, monitor],
+        ):
+            coord.get_lte()
+        assert coord.ds["lte"]["lte1"]["rssi"] == -75
+        assert coord.ds["lte"]["lte1"]["current-cellid"] == "12345"
+
     def test_get_script(self, hass):
         coord = _make_coordinator(hass)
         with patch(

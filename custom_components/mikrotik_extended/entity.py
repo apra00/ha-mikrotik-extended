@@ -45,6 +45,7 @@ _IFACE_TYPE_CATEGORY = {
     "ether": "port",
     "vlan": "vlan",
     "wlan": "wifi",
+    "lte": "modem",
     "bridge": "bridge",
     "pppoe-out": "ppp",
     "ppp": "ppp",

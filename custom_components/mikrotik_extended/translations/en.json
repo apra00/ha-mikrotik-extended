@@ -345,6 +345,12 @@
       "cloud_public_address": {
         "name": "Public address"
       },
+      "lte_cell_id": {
+        "name": "Cell ID"
+      },
+      "lte_signal_strength": {
+        "name": "Signal strength"
+      },
       "wireguard_peer_rx": {
         "name": "RX"
       },

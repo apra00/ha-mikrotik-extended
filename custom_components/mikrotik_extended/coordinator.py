@@ -367,6 +367,7 @@ class MikrotikCoordinator(DataUpdateCoordinator[None]):
             "environment": {},
             "ups": {},
             "gps": {},
+            "lte": {},
             "netwatch": {},
             "ip_address": {},
             "cloud": {},
@@ -877,6 +878,9 @@ class MikrotikCoordinator(DataUpdateCoordinator[None]):
 
         if self.api.connected() and self.support_gps:
             await self.hass.async_add_executor_job(self.get_gps)
+
+        if self.api.connected():
+            await self.hass.async_add_executor_job(self.get_lte)
 
         if not self.api.connected():
             if self.api.error == "wrong_login":
@@ -2063,6 +2067,72 @@ class MikrotikCoordinator(DataUpdateCoordinator[None]):
                 {"name": "horizontal-dilution", "default": "unknown"},
             ],
         )
+
+    # ---------------------------
+    #   get_lte
+    # ---------------------------
+    def get_lte(self) -> None:
+        """Get LTE modem interface and cell info from Mikrotik"""
+        self.ds["lte"] = parse_api(
+            data=self.ds["lte"],
+            source=self.api.query("/interface/lte"),
+            key="default-name",
+            key_secondary="name",
+            vals=[
+                {"name": "default-name"},
+                {"name": ".id"},
+                {"name": "name", "default_val": "default-name"},
+                {"name": "type", "default": "lte"},
+                {"name": "running", "type": "bool"},
+                {
+                    "name": "enabled",
+                    "source": "disabled",
+                    "type": "bool",
+                    "reverse": True,
+                },
+                {"name": "port-mac-address", "source": "mac-address"},
+                {"name": "comment"},
+            ],
+            ensure_vals=[
+                {"name": "current-cellid", "default": "unknown"},
+                {"name": "rssi", "default": "unknown"},
+                {"name": "rsrp", "default": "unknown"},
+                {"name": "rsrq", "default": "unknown"},
+                {"name": "sinr", "default": "unknown"},
+                {"name": "band", "default": "unknown"},
+                {"name": "access-technology", "default": "unknown"},
+                {"name": "registration-status", "default": "unknown"},
+                {"name": "current-operator", "default": "unknown"},
+            ],
+            prune_stale=True,
+            stale_counters=self._get_stale_counters("lte"),
+        )
+
+        for uid, vals in self.ds["lte"].items():
+            self.ds["lte"][uid]["comment"] = str(vals["comment"])
+            if not (vals["enabled"] and vals["running"]):
+                continue
+
+            self.ds["lte"] = parse_api(
+                data=self.ds["lte"],
+                source=self.api.query(
+                    "/interface/lte",
+                    command="monitor",
+                    args={".id": vals[".id"], "once": True},
+                ),
+                key_search="name",
+                vals=[
+                    {"name": "current-cellid", "default": "unknown"},
+                    {"name": "rssi", "default": "unknown"},
+                    {"name": "rsrp", "default": "unknown"},
+                    {"name": "rsrq", "default": "unknown"},
+                    {"name": "sinr", "default": "unknown"},
+                    {"name": "band", "default": "unknown"},
+                    {"name": "access-technology", "default": "unknown"},
+                    {"name": "registration-status", "default": "unknown"},
+                    {"name": "current-operator", "default": "unknown"},
+                ],
+            )
 
     # ---------------------------
     #   get_script
