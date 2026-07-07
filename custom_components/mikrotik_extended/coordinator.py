@@ -2091,12 +2091,14 @@ class MikrotikCoordinator(DataUpdateCoordinator[None]):
         {"name": "iccid", "default": "unknown"},
         {"name": "band", "source": "primary-band", "default": "unknown"},
         {"name": "earfcn", "default": "unknown"},
-        {"name": "cqi", "default": "unknown"},
-        {"name": "ri", "default": "unknown"},
-        {"name": "rssi", "default": "unknown"},
-        {"name": "rsrp", "default": "unknown"},
-        {"name": "rsrq", "default": "unknown"},
-        {"name": "sinr", "default": "unknown"},
+        # Numeric fields with a device_class in sensor_types.py: HA requires these to be
+        # a real number or None, never the string "unknown" (raises ValueError on state write).
+        {"name": "cqi", "default": None},
+        {"name": "ri", "default": None},
+        {"name": "rssi", "default": None},
+        {"name": "rsrp", "default": None},
+        {"name": "rsrq", "default": None},
+        {"name": "sinr", "default": None},
     ]
 
     def get_lte(self) -> None:
