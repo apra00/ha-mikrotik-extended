@@ -119,11 +119,19 @@ async def _try_re_enable_entity(platform, entity_registry, entity, entity_id, ob
         await platform.async_add_entities([obj])
 
 
-def _cleanup_orphans(hass, platform, config_entry) -> None:
-    """Remove orphaned entities and empty devices for this config entry."""
+def _cleanup_orphans(hass, platform, config_entry, seen_unique_ids) -> None:
+    """Remove orphaned entities and empty devices for this config entry.
+
+    "Orphaned" means the current poll's data no longer produced this unique_id
+    at all (e.g. a VLAN was deleted on the router) — NOT merely "not yet in
+    platform.entities". That runtime cache lags behind the registry by design
+    (e.g. right after a user manually re-enables a disabled entity, before this
+    same pass gets to re-adding it), so keying off it here would delete entities
+    that are still valid and about to be re-added, defeating entity_registry_enabled_default.
+    """
     entity_registry = er.async_get(hass)
     for entry in er.async_entries_for_config_entry(entity_registry, config_entry.entry_id):
-        if entry.domain == platform.domain and entry.entity_id not in platform.entities:
+        if entry.domain == platform.domain and entry.unique_id not in seen_unique_ids:
             if entry.disabled:
                 continue
             _LOGGER.debug("Removing orphaned entity %s", entry.entity_id)
@@ -158,16 +166,17 @@ async def async_add_entities(hass: HomeAssistant, config_entry: ConfigEntry, dis
         elif entity is not None:
             await _try_re_enable_entity(platform, entity_registry, entity, entity_id, obj, config_entry)
 
-    async def _process_singleton(coordinator, entity_description, data) -> None:
+    async def _process_singleton(coordinator, entity_description, data, seen_unique_ids) -> None:
         if data.get(entity_description.data_attribute) is None:
             return
         func = dispatcher.get(entity_description.func)
         if func is None:
             return
         obj = func(coordinator, entity_description)
+        seen_unique_ids.add(_build_unique_id(config_entry.entry_id, obj, None))
         await async_check_exist(obj)
 
-    async def _process_keyed(coordinator, entity_description, data) -> None:
+    async def _process_keyed(coordinator, entity_description, data, seen_unique_ids) -> None:
         if not isinstance(data, (dict, list)):
             return
         for uid in data:
@@ -177,6 +186,7 @@ async def async_add_entities(hass: HomeAssistant, config_entry: ConfigEntry, dis
             if func is None:
                 continue
             obj = func(coordinator, entity_description, uid)
+            seen_unique_ids.add(_build_unique_id(config_entry.entry_id, obj, uid))
             await async_check_exist(obj, uid)
 
     @callback
@@ -185,16 +195,17 @@ async def async_add_entities(hass: HomeAssistant, config_entry: ConfigEntry, dis
         if coordinator.data is None:
             return
 
+        seen_unique_ids: set[str] = set()
         for entity_description in descriptions:
             data = coordinator.data.get(entity_description.data_path)
             if data is None:
                 continue
             if not entity_description.data_reference:
-                await _process_singleton(coordinator, entity_description, data)
+                await _process_singleton(coordinator, entity_description, data, seen_unique_ids)
             else:
-                await _process_keyed(coordinator, entity_description, data)
+                await _process_keyed(coordinator, entity_description, data, seen_unique_ids)
 
-        _cleanup_orphans(hass, platform, config_entry)
+        _cleanup_orphans(hass, platform, config_entry, seen_unique_ids)
 
     await async_update_controller(config_entry.runtime_data.data_coordinator)
 

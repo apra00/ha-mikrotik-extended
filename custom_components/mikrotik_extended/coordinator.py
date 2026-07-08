@@ -2071,6 +2071,36 @@ class MikrotikCoordinator(DataUpdateCoordinator[None]):
     # ---------------------------
     #   get_lte
     # ---------------------------
+    _LTE_MONITOR_VALS = [
+        {"name": "status", "default": "unknown"},
+        {"name": "pin-status", "default": "unknown"},
+        {"name": "registration-status", "default": "unknown"},
+        {"name": "manufacturer", "default": "unknown"},
+        {"name": "model", "default": "unknown"},
+        {"name": "revision", "default": "unknown"},
+        {"name": "current-operator", "default": "unknown"},
+        {"name": "lac", "default": "unknown"},
+        {"name": "current-cellid", "default": "unknown"},
+        {"name": "enb-id", "default": "unknown"},
+        {"name": "sector-id", "default": "unknown"},
+        {"name": "phy-cellid", "default": "unknown"},
+        {"name": "access-technology", "default": "unknown"},
+        {"name": "session-uptime", "default": "unknown"},
+        {"name": "imei", "default": "unknown"},
+        {"name": "imsi", "default": "unknown"},
+        {"name": "iccid", "default": "unknown"},
+        {"name": "band", "source": "primary-band", "default": "unknown"},
+        {"name": "earfcn", "default": "unknown"},
+        # Numeric fields with a device_class in sensor_types.py: HA requires these to be
+        # a real number or None, never the string "unknown" (raises ValueError on state write).
+        {"name": "cqi", "default": None},
+        {"name": "ri", "default": None},
+        {"name": "rssi", "default": None},
+        {"name": "rsrp", "default": None},
+        {"name": "rsrq", "default": None},
+        {"name": "sinr", "default": None},
+    ]
+
     def get_lte(self) -> None:
         """Get LTE modem interface and cell info from Mikrotik"""
         self.ds["lte"] = parse_api(
@@ -2093,17 +2123,7 @@ class MikrotikCoordinator(DataUpdateCoordinator[None]):
                 {"name": "port-mac-address", "source": "mac-address"},
                 {"name": "comment"},
             ],
-            ensure_vals=[
-                {"name": "current-cellid", "default": "unknown"},
-                {"name": "rssi", "default": "unknown"},
-                {"name": "rsrp", "default": "unknown"},
-                {"name": "rsrq", "default": "unknown"},
-                {"name": "sinr", "default": "unknown"},
-                {"name": "band", "default": "unknown"},
-                {"name": "access-technology", "default": "unknown"},
-                {"name": "registration-status", "default": "unknown"},
-                {"name": "current-operator", "default": "unknown"},
-            ],
+            ensure_vals=self._LTE_MONITOR_VALS,
             prune_stale=True,
             stale_counters=self._get_stale_counters("lte"),
         )
@@ -2113,25 +2133,18 @@ class MikrotikCoordinator(DataUpdateCoordinator[None]):
             if not (vals["enabled"] and vals["running"]):
                 continue
 
-            self.ds["lte"] = parse_api(
-                data=self.ds["lte"],
+            # Merge straight into this interface's own sub-dict: /interface/lte
+            # monitor does not echo back a "name" field, so the whole-dict
+            # key_search="name" matching used elsewhere (e.g. ether monitor)
+            # can never find this entry and silently no-ops.
+            self.ds["lte"][uid] = parse_api(
+                data=self.ds["lte"][uid],
                 source=self.api.query(
                     "/interface/lte",
                     command="monitor",
                     args={".id": vals[".id"], "once": True},
                 ),
-                key_search="name",
-                vals=[
-                    {"name": "current-cellid", "default": "unknown"},
-                    {"name": "rssi", "default": "unknown"},
-                    {"name": "rsrp", "default": "unknown"},
-                    {"name": "rsrq", "default": "unknown"},
-                    {"name": "sinr", "default": "unknown"},
-                    {"name": "band", "default": "unknown"},
-                    {"name": "access-technology", "default": "unknown"},
-                    {"name": "registration-status", "default": "unknown"},
-                    {"name": "current-operator", "default": "unknown"},
-                ],
+                vals=self._LTE_MONITOR_VALS,
             )
 
     # ---------------------------

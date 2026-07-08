@@ -1548,15 +1548,21 @@ class TestMiscSensorGetters:
 
     def test_get_lte_enabled_triggers_monitor(self, hass):
         coord = _make_coordinator(hass)
-        lte_list = {"lte1": {"comment": "", "enabled": True, "running": True, ".id": "*1"}}
-        monitor = {"lte1": {"current-cellid": "12345", "rssi": -75}}
+        lte_entry = {"comment": "", "enabled": True, "running": True, ".id": "*1"}
+        lte_list = {"lte1": lte_entry}
+        # /interface/lte monitor does not echo back a "name" field, so the merge
+        # writes straight into the interface's own sub-dict (no key_search).
+        monitor = {"current-cellid": "12345", "rssi": -75}
         with patch(
             "custom_components.mikrotik_extended.coordinator.parse_api",
             side_effect=[lte_list, monitor],
-        ):
+        ) as mock_parse:
             coord.get_lte()
         assert coord.ds["lte"]["lte1"]["rssi"] == -75
         assert coord.ds["lte"]["lte1"]["current-cellid"] == "12345"
+        # second call merges directly into the sub-dict, not the whole "lte" dict
+        assert mock_parse.call_args_list[1].kwargs["data"] is lte_entry
+        assert "key_search" not in mock_parse.call_args_list[1].kwargs
 
     def test_get_script(self, hass):
         coord = _make_coordinator(hass)
